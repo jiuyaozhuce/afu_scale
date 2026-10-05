@@ -13,6 +13,7 @@ from .const import (
     CONF_HEIGHT_CM,
     CONF_MAX_DELTA_KG,
     CONF_SEX,
+    DEFAULT_MAX_DELTA_KG,
     DOMAIN,
 )
 from .coordinator import AfuScaleCoordinator
@@ -30,7 +31,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_HEIGHT_CM],
         entry.data[CONF_SEX],
         entry.data[CONF_AGE],
-        entry.data[CONF_MAX_DELTA_KG],
+        entry.data.get(CONF_MAX_DELTA_KG, DEFAULT_MAX_DELTA_KG),
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
