@@ -9,10 +9,11 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback, State
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN
 from .coordinator import AfuScaleCoordinator
@@ -89,7 +90,7 @@ SENSOR_DEFS: dict[str, dict] = {
 }
 
 
-class AfuSensor(SensorEntity):
+class AfuSensor(SensorEntity, RestoreEntity):
     """AFU 体脂秤传感器基类"""
 
     def __init__(self, coordinator: AfuScaleCoordinator, key: str) -> None:
@@ -119,6 +120,17 @@ class AfuSensor(SensorEntity):
             model="AFU-WL-TZ-A1",
         )
 
+    async def async_added_to_hass(self) -> None:
+        """恢复上次状态，避免断连后变 unknown。"""
+        await super().async_added_to_hass()
+        last_state: State | None = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in ("unknown", "unavailable", ""):
+            try:
+                # 状态可能是字符串数字
+                self._attr_native_value = float(last_state.state)
+            except ValueError:
+                self._attr_native_value = last_state.state
+
     @callback
     def async_update_state(self, value) -> None:
         # 将 kg 转换为斤（体重、肌肉量、骨量）
@@ -142,6 +154,8 @@ class AfuTimestampSensor(AfuSensor):
         self._attr_state_class = None
         self._attr_suggested_display_precision = None
         self._attr_icon = "mdi:clock-outline"
+
+    # timestamp 不需要恢复数值，保持默认
 
 
 async def async_setup_entry(
