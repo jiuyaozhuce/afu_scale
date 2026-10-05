@@ -20,10 +20,10 @@ from .coordinator import AfuScaleCoordinator
 SENSOR_DEFS: dict[str, dict] = {
     "weight": {
         "name": "体重",
-        "unit": "kg",
+        "unit": "斤",
         "device_class": SensorDeviceClass.WEIGHT,
         "state_class": SensorStateClass.MEASUREMENT,
-        "precision": 2,
+        "precision": 1,
     },
     "impedance": {
         "name": "电阻抗",
@@ -56,7 +56,7 @@ SENSOR_DEFS: dict[str, dict] = {
     },
     "muscle": {
         "name": "肌肉量",
-        "unit": "kg",
+        "unit": "斤",
         "device_class": SensorDeviceClass.WEIGHT,
         "state_class": SensorStateClass.MEASUREMENT,
         "precision": 1,
@@ -69,7 +69,7 @@ SENSOR_DEFS: dict[str, dict] = {
     },
     "bone": {
         "name": "骨量",
-        "unit": "kg",
+        "unit": "斤",
         "device_class": SensorDeviceClass.WEIGHT,
         "state_class": SensorStateClass.MEASUREMENT,
         "precision": 2,
@@ -106,6 +106,9 @@ class AfuSensor(SensorEntity):
 
     @callback
     def async_update_state(self, value) -> None:
+        # 将 kg 转换为斤（体重、肌肉量、骨量）
+        if self._key in ("weight", "muscle", "bone") and value is not None:
+            value = round(value * 2, self._def.get("precision", 1))
         self._attr_native_value = value
         self.async_write_ha_state()
 
