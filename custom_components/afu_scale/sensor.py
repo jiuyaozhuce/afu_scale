@@ -17,6 +17,18 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import AfuScaleCoordinator
 
+ICON_MAP: dict[str, str] = {
+    "weight": "mdi:scale-bathroom",
+    "impedance": "mdi:flash",
+    "stable": "mdi:checkbox-marked-circle",
+    "bmi": "mdi:human-male-height",
+    "body_fat": "mdi:percent",
+    "water": "mdi:water-percent",
+    "muscle": "mdi:weight-kilogram",
+    "protein": "mdi:egg",
+    "bone": "mdi:bone",
+}
+
 SENSOR_DEFS: dict[str, dict] = {
     "weight": {
         "name": "体重",
@@ -94,6 +106,9 @@ class AfuSensor(SensorEntity):
             self._attr_state_class = self._def["state_class"]
         if "precision" in self._def:
             self._attr_suggested_display_precision = self._def["precision"]
+        # 图标
+        if key in ICON_MAP:
+            self._attr_icon = ICON_MAP[key]
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -126,6 +141,7 @@ class AfuTimestampSensor(AfuSensor):
         self._attr_native_unit_of_measurement = None
         self._attr_state_class = None
         self._attr_suggested_display_precision = None
+        self._attr_icon = "mdi:clock-outline"
 
 
 async def async_setup_entry(
