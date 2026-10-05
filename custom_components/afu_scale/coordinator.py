@@ -5,6 +5,8 @@
   - 主动连接体脂秤，订阅 0xFFB2 通知
   - 解析 0xAC 报文（体重/稳定/阻抗），并计算 BIA 指标
   - 连接断开后自动重连
+  - 体重跳变过滤：同一测量会话内两次稳定读数差值过大时丢弃新数据
+  - 蓝牙连接暂停/恢复：让位给手机 app
 
 """
 
@@ -69,17 +71,19 @@ class AfuScaleCoordinator:
     """管理与体脂秤的 BLE 连接并分发测量数据。"""
 
     def __init__(self, hass: HomeAssistant, address: str, height_cm: float,
-                 sex: str, age: int) -> None:
+                 sex: str, age: int, max_delta_kg: float) -> None:
         self.hass = hass
         self.address = address
         self.height_cm = height_cm
         self.male = sex == "male"
         self.age = age
+        self.max_delta_kg = max_delta_kg
 
         self._client: BleakClient | None = None
         self._connect_lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self._shutdown = False
+        self._paused = False  # True 时停止重连，让位给手机 app
         self.entities: dict[str, AfuSensor] = {}
 
         # 测量中状态：收到有效数据包置 True，无数据超时后置 False
@@ -87,6 +91,9 @@ class AfuScaleCoordinator:
         self._last_data_at: float = 0.0
         self._idle_handle: asyncio.TimerHandle | None = None
         self.measuring_entity = None
+
+        # 体重跳变过滤：上一次接受的稳定体重（跨会话保留，单人长期使用）
+        self._last_accepted_weight: float | None = None
 
     def _set_measuring(self, value: bool) -> None:
         if self.measuring == value:
@@ -103,8 +110,28 @@ class AfuScaleCoordinator:
         self._shutdown = False
         self._task = asyncio.create_task(self._run())
 
+    def reset_baseline(self) -> None:
+        """重置 baseline：下次 stable 报文会无条件接受为新 baseline。
+
+        适用场景：
+        - 测试时把错误值（如 8kg 物体）误当成了 baseline
+        - 体重真的发生了大幅变化（> 阈值）导致所有读数都被卡住
+        - 想强制重新校准
+        """
+        if self._last_accepted_weight is not None:
+            _LOGGER.info(
+                "AFU Scale %s: baseline 已重置（之前 %.1fkg）",
+                self.address, self._last_accepted_weight,
+            )
+        else:
+            _LOGGER.info("AFU Scale %s: baseline 已重置（之前未设置）", self.address)
+        self._last_accepted_weight = None
+
     async def stop(self) -> None:
         self._shutdown = True
+        if self._idle_handle is not None:
+            self._idle_handle.cancel()
+            self._idle_handle = None
         if self._task:
             self._task.cancel()
             try:
@@ -120,6 +147,10 @@ class AfuScaleCoordinator:
 
     async def _run(self) -> None:
         while not self._shutdown:
+            if self._paused:
+                # 用户主动暂停：每 5s 检查一次是否恢复
+                await asyncio.sleep(5)
+                continue
             try:
                 await self._connect_and_listen()
             except asyncio.CancelledError:
@@ -129,6 +160,29 @@ class AfuScaleCoordinator:
             if self._shutdown:
                 break
             await asyncio.sleep(RECONNECT_DELAY)
+
+    async def set_paused(self, paused: bool) -> None:
+        """控制 BLE 连接：paused=True 时主动断开并不再重连。
+
+        适用场景：让位给手机 app（如 Mi Fitness）连接秤。
+        - 关闭开关：主动断开现有连接 + 停止重连尝试
+        - 开启开关：恢复重连尝试
+        """
+        if paused == self._paused:
+            return
+        self._paused = paused
+        if paused:
+            _LOGGER.info(
+                "AFU Scale %s: 已暂停 BLE 连接（让位给手机 app）", self.address
+            )
+            if self._client:
+                try:
+                    await self._client.disconnect()
+                except Exception:  # noqa: BLE001
+                    pass
+                self._client = None
+        else:
+            _LOGGER.info("AFU Scale %s: 已恢复 BLE 连接", self.address)
 
     async def _connect_and_listen(self) -> None:
         async with self._connect_lock:
@@ -181,15 +235,29 @@ class AfuScaleCoordinator:
         if parsed is None:
             return
         weight_kg, is_stable, impedance = parsed
+
+        # 体重跳变过滤：仅对 stable 报文、与上一次接受的稳定体重比对
+        if is_stable and self._last_accepted_weight is not None:
+            delta = abs(weight_kg - self._last_accepted_weight)
+            if delta > self.max_delta_kg:
+                _LOGGER.info(
+                    "AFU Scale: 体重跳变 %.1fkg (last=%.1f, new=%.1f, "
+                    "threshold=%.1f) 已丢弃",
+                    delta, self._last_accepted_weight, weight_kg,
+                    self.max_delta_kg,
+                )
+                # 人还在秤上：保持 measuring 状态和 idle 计时器
+                self._touch_measuring()
+                return  # 全丢：weight/impedance/BIA/timestamp 都不更新
+
+        if is_stable:
+            self._last_accepted_weight = weight_kg
+
         _LOGGER.debug(
             "AFU Scale: %.2fkg stable=%s impedance=%.0fΩ",
             weight_kg, is_stable, impedance,
         )
-        self._set_measuring(True)
-        self._last_data_at = time.monotonic()
-        if self._idle_handle is not None:
-            self._idle_handle.cancel()
-        self._idle_handle = self.hass.loop.call_later(15, self._idle_timeout)
+        self._touch_measuring()
         values = self._compute_bia(weight_kg, impedance)
         values["weight"] = weight_kg
         values["stable"] = 1.0 if is_stable else 0.0
@@ -198,6 +266,14 @@ class AfuScaleCoordinator:
         for key, entity in self.entities.items():
             if key in values:
                 entity.async_update_state(values[key])
+
+    def _touch_measuring(self) -> None:
+        """刷新 measuring 状态和 idle 计时器。"""
+        self._set_measuring(True)
+        self._last_data_at = time.monotonic()
+        if self._idle_handle is not None:
+            self._idle_handle.cancel()
+        self._idle_handle = self.hass.loop.call_later(15, self._idle_timeout)
 
     def _idle_timeout(self) -> None:
         """连续 15 秒无新数据时，把"测量中"置 False。"""
