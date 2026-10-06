@@ -86,14 +86,14 @@ class AfuScaleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
-        return AfuScaleOptionsFlow(config_entry)
+        # OptionsFlow 由 HA 注入 config_entry，不能自行构造传参
+        return AfuScaleOptionsFlow()
 
 
 class AfuScaleOptionsFlow(config_entries.OptionsFlow):
     """AFU 体脂秤选项流：在线修改身高/年龄/性别/跳变阈值。"""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+    # HA >=2024.6: OptionsFlow 自带 config_entry 属性（只读），不要自行赋值
 
     async def async_step_init(self, user_input=None) -> FlowResult:
         if user_input is not None:
