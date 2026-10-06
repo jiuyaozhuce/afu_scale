@@ -26,6 +26,12 @@ STABLE_FLAG = 0x02
 # 握手包（某些固件需要写入后才推送完整数据）
 HANDSHAKE = bytes([0xFD, 0x37, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x37])
 
+# 有效读数过滤
+MIN_VALID_WEIGHT_KG = 20.0   # 低于此值视为上/下秤瞬态或物体，丢弃
+MAX_VALID_WEIGHT_KG = 250.0  # 高于此值视为异常报文/非体重帧
+MIN_VALID_IMPEDANCE = 500.0  # 低于此值视为人未站稳/已离开
+MAX_VALID_IMPEDANCE = 2000.0 # 高于此值视为异常帧
+
 # 连接参数
 CONNECT_TIMEOUT = 30
 CONNECT_ATTEMPTS = 3

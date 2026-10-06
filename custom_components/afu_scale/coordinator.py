@@ -31,6 +31,10 @@ from .const import (
     CONNECT_TIMEOUT,
     DOMAIN,
     HANDSHAKE,
+    MAX_VALID_IMPEDANCE,
+    MAX_VALID_WEIGHT_KG,
+    MIN_VALID_IMPEDANCE,
+    MIN_VALID_WEIGHT_KG,
     NOTIFY_CHAR_UUID,
     PACKET_MAGIC,
     RECONNECT_DELAY,
@@ -58,12 +62,15 @@ def parse_packet(data: bytes):
     raw_weight = (data[3] - 0x68) * 65536 + data[4] * 256 + data[5]
     if raw_weight < 0:
         return None
-    # 该秤原始单位为 50g (0.05kg)，非 1g
+    # 该秤原始单位 50g (0.05kg)/步
     weight_kg = raw_weight * 0.05
     is_stable = data[6] == STABLE_FLAG
     impedance = (data[8] << 8) | data[9]
-    # 过滤无效读数：体重<=0（称重结束）或阻抗过低（人已离开）
-    if weight_kg <= 0.0 or impedance < 500.0:
+    # 物理范围过滤：上/下秤瞬态、字节错位、阻抗测量阶段的非体重帧
+    # 都会产生离谱值（如 2742kg），在源头丢弃，防止污染 baseline
+    if weight_kg < MIN_VALID_WEIGHT_KG or weight_kg > MAX_VALID_WEIGHT_KG:
+        return None
+    if impedance < MIN_VALID_IMPEDANCE or impedance > MAX_VALID_IMPEDANCE:
         return None
     return weight_kg, is_stable, impedance
 
