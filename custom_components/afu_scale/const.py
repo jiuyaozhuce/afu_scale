@@ -36,3 +36,7 @@ MAX_VALID_IMPEDANCE = 2000.0 # 高于此值视为异常帧
 CONNECT_TIMEOUT = 30
 CONNECT_ATTEMPTS = 3
 RECONNECT_DELAY = 30
+# 连接曾成功建立过 → 断开后快速重连（秤唤醒时会踢掉空闲连接，
+# 唤醒会话窗口只有几十秒，30s 慢重连会错过整个测量会话）
+FAST_RECONNECT_DELAY = 3
+FAST_RECONNECT_WINDOW = 60.0

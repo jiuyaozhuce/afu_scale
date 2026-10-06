@@ -30,6 +30,8 @@ from .const import (
     CONNECT_ATTEMPTS,
     CONNECT_TIMEOUT,
     DOMAIN,
+    FAST_RECONNECT_DELAY,
+    FAST_RECONNECT_WINDOW,
     HANDSHAKE,
     MAX_VALID_IMPEDANCE,
     MAX_VALID_WEIGHT_KG,
@@ -102,6 +104,9 @@ class AfuScaleCoordinator:
 
         # 体重跳变过滤：上一次接受的稳定体重（跨会话保留，单人长期使用）
         self._last_accepted_weight: float | None = None
+
+        # 上次连接成功时间（用于断开后快速重连窗口）
+        self._last_connected_at: float = 0.0
 
     def _set_measuring(self, value: bool) -> None:
         if self.measuring == value:
@@ -186,7 +191,13 @@ class AfuScaleCoordinator:
                 _LOGGER.warning("AFU Scale 连接异常: %s", exc)
             if self._shutdown:
                 break
-            await asyncio.sleep(RECONNECT_DELAY)
+            # 刚断开（秤唤醒踢连接、测量会话窗口短暂）→ 快速重连窗口
+            delay = RECONNECT_DELAY
+            if self._last_connected_at and (
+                time.monotonic() - self._last_connected_at < FAST_RECONNECT_WINDOW
+            ):
+                delay = FAST_RECONNECT_DELAY
+            await asyncio.sleep(delay)
 
     async def set_paused(self, paused: bool) -> None:
         """控制 BLE 连接：paused=True 时主动断开并不再重连。
@@ -234,6 +245,7 @@ class AfuScaleCoordinator:
                 _LOGGER.warning("AFU Scale: 连接失败 %s: %s", self.address, exc)
                 return
             self._client = client
+            self._last_connected_at = time.monotonic()
             self._update_connection_status("connected")
             _LOGGER.info("AFU Scale: 已连接 %s", self.address)
 
