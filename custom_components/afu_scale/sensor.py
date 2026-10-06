@@ -131,6 +131,9 @@ class AfuSensor(SensorEntity, RestoreEntity):
                 self._attr_native_value = float(last_state.state)
             except ValueError:
                 self._attr_native_value = last_state.state
+            # 体重实体恢复后给 baseline 播种（恢复值是斤，换回 kg）
+            if self._key == "weight" and isinstance(self._attr_native_value, float):
+                self._coordinator.seed_baseline(self._attr_native_value / 2.0)
 
     @callback
     def async_update_state(self, value) -> None:
@@ -151,6 +154,7 @@ class AfuTimestampSensor(SensorEntity, RestoreEntity):
 
     def __init__(self, coordinator: AfuScaleCoordinator) -> None:
         self._coordinator = coordinator
+        self._key = "timestamp"
         self._attr_unique_id = f"{DOMAIN}_{coordinator.address}_timestamp"
         self._attr_name = "AFU 体脂秤最近测量时间"
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
