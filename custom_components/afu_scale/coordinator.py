@@ -105,8 +105,9 @@ class AfuScaleCoordinator:
         # 体重跳变过滤：上一次接受的稳定体重（跨会话保留，单人长期使用）
         self._last_accepted_weight: float | None = None
 
-        # 上次连接成功时间（用于断开后快速重连窗口）
+        # 连接状态时刻（用于断开后快速重连窗口）
         self._last_connected_at: float = 0.0
+        self._last_disconnected_at: float = 0.0
 
     def _set_measuring(self, value: bool) -> None:
         if self.measuring == value:
@@ -191,10 +192,12 @@ class AfuScaleCoordinator:
                 _LOGGER.warning("AFU Scale 连接异常: %s", exc)
             if self._shutdown:
                 break
-            # 刚断开（秤唤醒踢连接、测量会话窗口短暂）→ 快速重连窗口
+            # 任何一次断开后的 FAST_RECONNECT_WINDOW 内快速重连：
+            # 秤唤醒称重时会踢掉现有连接，0xAC 推送在踢线后几秒内发出，
+            # 必须赶在会话窗口关闭前回连（锚定断开时刻，而非连接时刻）
             delay = RECONNECT_DELAY
-            if self._last_connected_at and (
-                time.monotonic() - self._last_connected_at < FAST_RECONNECT_WINDOW
+            if self._last_disconnected_at and (
+                time.monotonic() - self._last_disconnected_at < FAST_RECONNECT_WINDOW
             ):
                 delay = FAST_RECONNECT_DELAY
             await asyncio.sleep(delay)
@@ -256,6 +259,7 @@ class AfuScaleCoordinator:
                 await asyncio.sleep(5)
         finally:
             self._client = None
+            self._last_disconnected_at = time.monotonic()
             self._update_connection_status("disconnected")
             try:
                 await client.disconnect()
