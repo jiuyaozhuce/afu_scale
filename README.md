@@ -52,15 +52,15 @@ HACS → 自定义存储库 → 填入仓库地址 https://github.com/carl-chang
 
 | 实体 | 单位 | 说明 |
 |---|---|---|
-| `sensor.afu_ti_zhi_cheng_ti_zhong` | kg | 体重（实时，测量中持续更新） |
+| `sensor.afu_ti_zhi_cheng_ti_zhong` | 斤 | 体重（实时，测量中持续更新） |
 | `sensor.afu_ti_zhi_cheng_dian_zu_kang` | Ω | 电阻抗 |
 | `sensor.afu_ti_zhi_cheng_cheng_zhong_wen_ding` | - | 读数锁定（1=已稳定） |
 | `sensor.afu_ti_zhi_cheng_bmi` | - | BMI |
 | `sensor.afu_ti_zhi_cheng_ti_zhi_lv` | % | 体脂率 |
 | `sensor.afu_ti_zhi_cheng_shui_fen_lv` | % | 水分率 |
-| `sensor.afu_ti_zhi_cheng_ji_rou_liang` | kg | 肌肉量 |
+| `sensor.afu_ti_zhi_cheng_ji_rou_liang` | 斤 | 肌肉量 |
 | `sensor.afu_ti_zhi_cheng_dan_bai_zhi_lv` | % | 蛋白质率 |
-| `sensor.afu_ti_zhi_cheng_gu_liang` | kg | 骨量 |
+| `sensor.afu_ti_zhi_cheng_gu_liang` | 斤 | 骨量 |
 | `sensor.afu_ti_zhi_cheng_zui_jin_ce_liang_shi_jian` | - | 最近测量时间 |
 | `binary_sensor.afu_ti_zhi_cheng_ce_liang_zhong` | - | 测量中（收到数据开，15s 无数据关） |
 
@@ -85,7 +85,7 @@ action:
     data:
       title: 测量完成
       message: >-
-        体重 {{ states('sensor.afu_ti_zhi_cheng_ti_zhong') }} kg ·
+        体重 {{ states('sensor.afu_ti_zhi_cheng_ti_zhong') }} 斤 ·
         体脂率 {{ states('sensor.afu_ti_zhi_cheng_ti_zhi_lv') }} %
 ```
 
@@ -137,7 +137,7 @@ cards:
       - type: sensor
         entity: sensor.afu_ti_zhi_cheng_ti_zhong
         name: 体重
-        unit_of_measurement: kg
+        unit_of_measurement: 斤
         icon: mdi:weight-kilogram
         card_mod:
           style: >
@@ -194,7 +194,7 @@ cards:
       - type: custom:mushroom-template-card
         primary: >-
           {{ states('sensor.afu_ti_zhi_cheng_ji_rou_liang') | float | round(2)
-          }} kg
+          }} 斤
         secondary: 肌肉量
         icon: mdi:arm-flex-outline
         icon_color: green
@@ -206,7 +206,7 @@ cards:
         icon: mdi:egg-outline
         icon_color: orange
       - type: custom:mushroom-template-card
-        primary: "{{ states('sensor.afu_ti_zhi_cheng_gu_liang') | float | round(2) }} kg"
+        primary: "{{ states('sensor.afu_ti_zhi_cheng_gu_liang') | float | round(2) }} 斤"
         secondary: 骨量
         icon: mdi:bone
         icon_color: brown
@@ -216,7 +216,7 @@ cards:
         icon: mdi:omega
         icon_color: purple
       - type: custom:mushroom-template-card
-        primary: "{{ states('sensor.afu_ti_zhi_cheng_ti_zhong') }} kg"
+        primary: "{{ states('sensor.afu_ti_zhi_cheng_ti_zhong') }} 斤"
         secondary: 实时体重
         icon: mdi:scale-bathroom
         icon_color: teal
@@ -241,7 +241,7 @@ cards:
 | 偏移 | 含义 |
 |---|---|
 | 0 | 魔数 `0xAC` |
-| 3-5 | 体重（`(b3-0x68)*65536 + b4*256 + b5`，单位 0.001kg） |
+| 3-5 | 体重（`(b3-0x68)*65536 + b4*256 + b5`，单位 0.05kg/50g） |
 | 6 | `0x02` 表示数值稳定 |
 | 8-9 | 阻抗（Big Endian，Ω） |
 
