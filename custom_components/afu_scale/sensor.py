@@ -131,9 +131,6 @@ class AfuSensor(SensorEntity, RestoreEntity):
                 self._attr_native_value = float(last_state.state)
             except ValueError:
                 self._attr_native_value = last_state.state
-            # 体重实体恢复后给 baseline 播种（恢复值是斤，换回 kg）
-            if self._key == "weight" and isinstance(self._attr_native_value, float):
-                self._coordinator.seed_baseline(self._attr_native_value / 2.0)
 
     @callback
     def async_update_state(self, value) -> None:

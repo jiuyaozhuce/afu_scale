@@ -120,19 +120,6 @@ class AfuScaleCoordinator:
     def register_entity(self, key: str, entity: AfuSensor) -> None:
         self.entities[key] = entity
 
-    def seed_baseline(self, weight_kg: float) -> None:
-        """从恢复的上次体重播种 baseline（仅当尚无 baseline 时）。
-
-        HA 重启后内存 baseline 为空，第一个稳定读数会被无条件接受；
-        用上次已接受的体重做种子，重启后跳变过滤立即生效。
-        """
-        if self._last_accepted_weight is None and MAX_VALID_WEIGHT_KG >= weight_kg >= MIN_VALID_WEIGHT_KG:
-            self._last_accepted_weight = weight_kg
-            _LOGGER.info(
-                "AFU Scale %s: baseline 从上次体重播种 %.1fkg",
-                self.address, weight_kg,
-            )
-
     def start(self) -> None:
         self._shutdown = False
         self._task = asyncio.create_task(self._run())
