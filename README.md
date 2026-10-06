@@ -7,12 +7,18 @@
 ## 特性
 
 - 经蓝牙代理主动连接体脂秤，订阅 `0xFFB2` 通知
-- 解析 `0xAC` 体重报文（体重 / 稳定标志 / 阻抗）
+- 解析 `0xAC` 体重报文（体重 / 稳定标志 / 阻抗），输出单位为「斤」
 - 本地 BIA 计算：BMI、体脂率、水分率、肌肉量、蛋白质率、骨量
 - "测量中"二进制传感器：收到数据即开，15 秒无数据自动关（适合做动画/通知触发）
 - 自动重连（断开后每 30 秒重试）
 - 中文实体命名，`afu` 前缀避免与其他体脂秤冲突
 - 支持 UI 配置（config flow），无需手改 yaml
+- **蓝牙连接开关**：关闭时主动断开 BLE 并停止重连，让位给手机 App（如 Mi Fitness）
+- **体重跳变过滤**：稳定读数与上次基线差值超过阈值（默认 10kg，可在选项里调 1-50kg）时整包丢弃，防止宠物/物体上秤污染数据；提供 `afu_scale.reset_baseline` 服务重置基线
+- **在线修改配置**：身高/年龄/性别/跳变阈值可在集成选项里直接改，无需重装
+- **断连保持数值**：所有传感器基于 RestoreEntity，秤离线/HA 重启后保留上次测量值，不会变 unknown
+- **连接状态传感器**：实时输出 `connected / connecting / disconnected / device_not_found / connect_failed`，便于排查
+- **最近测量时间传感器**：仅在读数稳定时更新（timestamp 类型，适合做自动化触发源）
 
 ## 前置条件
 
@@ -33,7 +39,7 @@
 
 ### 方式二：HACS 自定义仓库（如已发布）
 
-HACS → 自定义存储库 → 填入仓库地址 https://github.com/carl-chang/afu_scale → 类型选 *Integration* → 下载 → 重启 HA
+HACS → 自定义存储库 → 填入仓库地址 https://github.com/jiuyaozhuce/afu_scale → 类型选 *Integration* → 下载 → 重启 HA
 
 ## 配置
 
@@ -45,8 +51,11 @@ HACS → 自定义存储库 → 填入仓库地址 https://github.com/carl-chang
 | 身高 (cm) | 用于 BIA 计算 |
 | 性别 | male=男 / female=女 |
 | 年龄 | 用于 BIA 计算 |
+| 体重跳变阈值 (kg) | 稳定读数与上次基线差值超过此值则整包丢弃（默认 10kg） |
 
 > 找不到 MAC？用手机 App（如 nRF Connect）或 `bleak` 扫描广播名 `AFU-WL-TZ-A1` 即可。
+> 安装后可在「集成 → AFU 体脂秤 → 选项」中在线修改身高/年龄/性别/跳变阈值，无需重装。
+> 体重因跳变过滤被长期卡住时，调用服务 `afu_scale.reset_baseline` 重置基线。
 
 ## 实体
 
@@ -56,12 +65,14 @@ HACS → 自定义存储库 → 填入仓库地址 https://github.com/carl-chang
 | `sensor.afu_ti_zhi_cheng_dian_zu_kang` | Ω | 电阻抗 |
 | `sensor.afu_ti_zhi_cheng_cheng_zhong_wen_ding` | - | 读数锁定（1=已稳定） |
 | `sensor.afu_ti_zhi_cheng_bmi` | - | BMI |
-| `sensor.afu_ti_zhi_cheng_ti_zhi_lv` | % | 体脂率 |
-| `sensor.afu_ti_zhi_cheng_shui_fen_lv` | % | 水分率 |
+| `sensor.afu_ti_zhi_cheng_ti_zhi_lu` | % | 体脂率 |
+| `sensor.afu_ti_zhi_cheng_shui_fen_lu` | % | 水分率 |
 | `sensor.afu_ti_zhi_cheng_ji_rou_liang` | 斤 | 肌肉量 |
-| `sensor.afu_ti_zhi_cheng_dan_bai_zhi_lv` | % | 蛋白质率 |
+| `sensor.afu_ti_zhi_cheng_dan_bai_zhi_lu` | % | 蛋白质率 |
 | `sensor.afu_ti_zhi_cheng_gu_liang` | 斤 | 骨量 |
-| `sensor.afu_ti_zhi_cheng_zui_jin_ce_liang_shi_jian` | - | 最近测量时间 |
+| `sensor.afu_ti_zhi_cheng_zui_jin_ce_liang_shi_jian` | - | 最近测量时间（仅稳定读数时更新） |
+| `sensor.afu_ti_zhi_cheng_lian_jie_zhuang_tai` | - | 蓝牙连接状态（connected / connecting / disconnected / device_not_found / connect_failed） |
+| `switch.afu_ti_zhi_cheng_lan_ya_lian_jie` | - | 蓝牙连接开关（关闭后让位给手机 App） |
 | `binary_sensor.afu_ti_zhi_cheng_ce_liang_zhong` | - | 测量中（收到数据开，15s 无数据关） |
 
 > 实体 ID 由名称拼音自动生成，实际 ID 以 HA 中为准（开发者工具 → 状态 搜索 `afu`）。
@@ -86,7 +97,7 @@ action:
       title: 测量完成
       message: >-
         体重 {{ states('sensor.afu_ti_zhi_cheng_ti_zhong') }} 斤 ·
-        体脂率 {{ states('sensor.afu_ti_zhi_cheng_ti_zhi_lv') }} %
+        体脂率 {{ states('sensor.afu_ti_zhi_cheng_ti_zhi_lu') }} %
 ```
 
 ### 仪表盘动画（需 card-mod）
@@ -250,11 +261,12 @@ cards:
 ```
 custom_components/afu_scale/
 ├── __init__.py         # 集成入口
-├── config_flow.py      # UI 配置
+├── config_flow.py      # UI 配置 + 选项流
 ├── const.py            # 常量
 ├── coordinator.py      # BLE 连接 / 报文解析 / BIA 计算
 ├── binary_sensor.py    # "测量中"传感器
-├── sensor.py           # 数据传感器实体
+├── sensor.py           # 数据传感器实体 + 连接状态传感器
+├── switch.py           # 蓝牙连接开关
 ├── manifest.json
 └── strings.json / translations/
 ```
