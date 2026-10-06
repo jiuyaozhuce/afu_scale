@@ -15,6 +15,7 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
+
 from .const import DOMAIN
 from .coordinator import AfuScaleCoordinator
 
@@ -28,6 +29,8 @@ ICON_MAP: dict[str, str] = {
     "muscle": "mdi:weight-kilogram",
     "protein": "mdi:egg",
     "bone": "mdi:bone",
+    "timestamp": "mdi:clock-outline",
+    "connection_status": "mdi:bluetooth",
 }
 
 SENSOR_DEFS: dict[str, dict] = {
@@ -91,7 +94,7 @@ SENSOR_DEFS: dict[str, dict] = {
 
 
 class AfuSensor(SensorEntity, RestoreEntity):
-    """AFU 体脂秤传感器基类"""
+    """AFU 体脂秤传感器基类：永远保持上次有效值，不设为 None/unknown"""
 
     def __init__(self, coordinator: AfuScaleCoordinator, key: str) -> None:
         self._coordinator = coordinator
@@ -107,7 +110,6 @@ class AfuSensor(SensorEntity, RestoreEntity):
             self._attr_state_class = self._def["state_class"]
         if "precision" in self._def:
             self._attr_suggested_display_precision = self._def["precision"]
-        # 图标
         if key in ICON_MAP:
             self._attr_icon = ICON_MAP[key]
 
@@ -121,41 +123,91 @@ class AfuSensor(SensorEntity, RestoreEntity):
         )
 
     async def async_added_to_hass(self) -> None:
-        """恢复上次状态，避免断连后变 unknown。"""
+        """恢复上次状态，避免重启后变 unknown"""
         await super().async_added_to_hass()
         last_state: State | None = await self.async_get_last_state()
         if last_state is not None and last_state.state not in ("unknown", "unavailable", ""):
             try:
-                # 状态可能是字符串数字
                 self._attr_native_value = float(last_state.state)
             except ValueError:
                 self._attr_native_value = last_state.state
 
     @callback
     def async_update_state(self, value) -> None:
-        # 将 kg 转换为斤（体重、肌肉量、骨量）
-        if self._key in ("weight", "muscle", "bone") and value is not None:
+        """收到新值才更新；value 为 None 时保持原值不变"""
+        if value is None:
+            return
+        # 体重、肌肉量、骨量：kg → 斤
+        if self._key in ("weight", "muscle", "bone"):
             value = round(value * 2, self._def.get("precision", 1))
+        elif "precision" in self._def:
+            value = round(value, self._def["precision"])
         self._attr_native_value = value
         self.async_write_ha_state()
 
 
-class AfuTimestampSensor(AfuSensor):
-    """记录最近一次测量时间"""
+class AfuTimestampSensor(SensorEntity, RestoreEntity):
+    """最近一次稳定测量时间：仅在 stable=True 时更新"""
 
     def __init__(self, coordinator: AfuScaleCoordinator) -> None:
-        super().__init__(coordinator, "weight")
-        self._key = "timestamp"
+        self._coordinator = coordinator
         self._attr_unique_id = f"{DOMAIN}_{coordinator.address}_timestamp"
         self._attr_name = "AFU 体脂秤最近测量时间"
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
-        self._attr_native_unit_of_measurement = None
-        self._attr_state_class = None
-        self._attr_suggested_display_precision = None
-        self._attr_icon = "mdi:clock-outline"
+        self._attr_should_poll = False
+        self._attr_icon = ICON_MAP["timestamp"]
 
-    # timestamp 不需要恢复数值，保持默认
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._coordinator.address)},
+            name="AFU 体脂秤",
+            manufacturer="沃莱科技",
+            model="AFU-WL-TZ-A1",
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state: State | None = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in ("unknown", "unavailable", ""):
+            self._attr_native_value = last_state.state
+
+    @callback
+    def async_update_state(self, timestamp) -> None:
+        """仅在有稳定读数时更新"""
+        if timestamp is None:
+            return
+        self._attr_native_value = timestamp
+        self.async_write_ha_state()
+
+
+class AfuConnectionStatusSensor(SensorEntity):
+    """蓝牙连接状态：connected / disconnected / connecting"""
+
+    def __init__(self, coordinator: AfuScaleCoordinator) -> None:
+        self._coordinator = coordinator
+        self._key = "connection_status"
+        self._attr_unique_id = f"{DOMAIN}_{coordinator.address}_connection_status"
+        self._attr_name = "AFU 体脂秤连接状态"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_should_poll = False
+        self._attr_icon = ICON_MAP["connection_status"]
+        self._attr_native_value = "disconnected"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._coordinator.address)},
+            name="AFU 体脂秤",
+            manufacturer="沃莱科技",
+            model="AFU-WL-TZ-A1",
+        )
+
+    @callback
+    def async_update_state(self, status: str) -> None:
+        self._attr_native_value = status
+        self.async_write_ha_state()
 
 
 async def async_setup_entry(
@@ -166,6 +218,7 @@ async def async_setup_entry(
     coordinator: AfuScaleCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [AfuSensor(coordinator, key) for key in SENSOR_DEFS]
     entities.append(AfuTimestampSensor(coordinator))
+    entities.append(AfuConnectionStatusSensor(coordinator))
     async_add_entities(entities)
     for entity in entities:
         coordinator.register_entity(entity._key, entity)

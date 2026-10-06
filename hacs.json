@@ -2,5 +2,6 @@
     "name": "AFU Body Scale",
     "render_readme": true,
     "country": ["US","CN"],
-    "homeassistant": "2024.03"
+    "homeassistant": "2024.03",
+    "repository": "https://github.com/jiuyaozhuce/afu_scale"
 }

@@ -58,7 +58,8 @@ def parse_packet(data: bytes):
     raw_weight = (data[3] - 0x68) * 65536 + data[4] * 256 + data[5]
     if raw_weight < 0:
         return None
-    weight_kg = raw_weight / 1000.0
+    # 该秤原始单位为 50g (0.05kg)，非 1g
+    weight_kg = raw_weight * 0.05
     is_stable = data[6] == STABLE_FLAG
     impedance = (data[8] << 8) | data[9]
     # 过滤无效读数：体重<=0（称重结束）或阻抗过低（人已离开）
@@ -109,6 +110,12 @@ class AfuScaleCoordinator:
     def start(self) -> None:
         self._shutdown = False
         self._task = asyncio.create_task(self._run())
+
+    def _update_connection_status(self, status: str) -> None:
+        """更新连接状态传感器"""
+        entity = self.entities.get("connection_status")
+        if entity:
+            entity.async_update_state(status)
 
     def reset_baseline(self) -> None:
         """重置 baseline：下次 stable 报文会无条件接受为新 baseline。
@@ -190,8 +197,10 @@ class AfuScaleCoordinator:
                 self.hass, self.address, connectable=True
             )
             if device is None:
+                self._update_connection_status("device_not_found")
                 _LOGGER.debug("AFU Scale: 设备未在蓝牙集成中出现，等待重试")
                 return
+            self._update_connection_status("connecting")
             try:
                 client = await establish_connection(
                     BleakClient,
@@ -201,9 +210,11 @@ class AfuScaleCoordinator:
                     max_attempts=CONNECT_ATTEMPTS,
                 )
             except BleakError as exc:
+                self._update_connection_status("connect_failed")
                 _LOGGER.warning("AFU Scale: 连接失败 %s: %s", self.address, exc)
                 return
             self._client = client
+            self._update_connection_status("connected")
             _LOGGER.info("AFU Scale: 已连接 %s", self.address)
 
         try:
@@ -213,6 +224,7 @@ class AfuScaleCoordinator:
                 await asyncio.sleep(5)
         finally:
             self._client = None
+            self._update_connection_status("disconnected")
             try:
                 await client.disconnect()
             except Exception:  # noqa: BLE001
@@ -262,7 +274,9 @@ class AfuScaleCoordinator:
         values["weight"] = weight_kg
         values["stable"] = 1.0 if is_stable else 0.0
         values["impedance"] = impedance
-        values["timestamp"] = dt_util.utcnow()
+        # 最近测量时间：仅在读数稳定时更新
+        if is_stable:
+            values["timestamp"] = dt_util.utcnow()
         for key, entity in self.entities.items():
             if key in values:
                 entity.async_update_state(values[key])
