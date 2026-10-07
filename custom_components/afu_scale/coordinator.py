@@ -192,6 +192,7 @@ class AfuScaleCoordinator:
         self._idle_handle = self.hass.loop.call_later(15, self._idle_timeout)
         values = self._compute_bia(weight_kg, impedance)
         values["weight"] = weight_kg
+        values["weight_jin"] = weight_kg * 2.0
         values["stable"] = 1.0 if is_stable else 0.0
         values["impedance"] = impedance
         values["timestamp"] = dt_util.utcnow()

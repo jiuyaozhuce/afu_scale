@@ -25,6 +25,13 @@ SENSOR_DEFS: dict[str, dict] = {
         "state_class": SensorStateClass.MEASUREMENT,
         "precision": 2,
     },
+    "weight_jin": {
+        "name": "体重（斤）",
+        "unit": "斤",
+        "device_class": SensorDeviceClass.WEIGHT,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "precision": 1,
+    },
     "impedance": {
         "name": "电阻抗",
         "unit": "Ω",
